@@ -1,0 +1,17 @@
+/data
+data/*
+!wm/data
+!wm/data/*
+manifests/*
+!manifests/.gitkeep
+
+**/..git/*
+__pycache__/
+.ipynb_checkpoints/
+.DS_Store
+._.DS_Store
+.vscode/
+*.egg-info/
+.pytest_cache
+*.ipynb_checkpoints
+

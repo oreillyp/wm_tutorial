@@ -1,0 +1,4 @@
+torch
+matplotlib
+rich
+descript-audiotools
