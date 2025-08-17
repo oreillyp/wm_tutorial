@@ -11,6 +11,8 @@ Links to code are provided below:
 | Example 3: End-to-End Neural Network Watermark | <a href="https://colab.research.google.com/github/oreillyp/wm_tutorial/blob/main/notebooks/end_to_end.ipynb"><img alt="Open Example 3 in Colab" src="https://colab.research.google.com/assets/colab-badge.svg" /></a> |
 | Example 4: Attacks on Speech Watermarks | <a href="https://huggingface.co/spaces/oreillyp/watermark_stress_test"><img alt="Open Example 4 in HuggingFace" src="https://img.shields.io/badge/Open%20in-HuggingFace-blue?logo=huggingface" /></a> |
 
+A quick __warning__: the free-tier Google Colab T4 instance is fairly slow for the installation steps, and _very_ slow for the neural network training in Example 3; you may have to reduce the training batch size to see reasonable training times. By contrast, Example 3 should train fairly briskly on a single consumer-grade GPU (e.g. RTX 3090).
+
 ## Linking Google Colab to Google Drive
 
 If you will be running notebooks via [Google Colab](https://colab.research.google.com/), you'll want to avoid repeatedly downloading code and data in each separate notebook due to the lack of a persistent shared runtime. You can get around this by [linking your Google Drive account](https://www.marktechpost.com/2025/07/12/how-to-connect-google-colab-with-google-drive/). At the top of each notebook in this repository is a set of cells handling installation steps for Google Colab; when you run the cell containing 

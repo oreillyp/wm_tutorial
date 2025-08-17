@@ -2,13 +2,13 @@ import math
 import torch
 import copy
 
-
+from typing import List
 from numpy.random import RandomState
-from dasp_pytorch.functional import noise_shaped_reverberation
 
 from audiotools import AudioSignal, STFTParams
 from audiotools.core.util import sample_from_dist
 from audiotools.data.transforms import BaseTransform
+from audiotools.data.datasets import AudioLoader
 
 
 class Noise(BaseTransform):
@@ -43,125 +43,65 @@ class Noise(BaseTransform):
 
 class Reverb(BaseTransform):
     """
-    Wraps filtered noise reverb from dasp-pytorch; see
-    https://github.com/csteinmetz1/dasp-pytorch/blob/main/dasp_pytorch/functional.py
+    Patch device error in `audiotools.data.transforms.RoomImpulseResponse` to 
+    allow training on GPU.
     """
+
     def __init__(
-        self, 
-        n_taps: int = 1023,
-        n_samples: int = 65536,
-        snr: tuple = ("uniform", 0.0, 30.0),
+        self,
+        drr: tuple = ("uniform", 0.0, 30.0),
+        sources: List[str] = None,
+        weights: List[float] = None,
+        eq_amount: tuple = ("const", 1.0),
+        n_bands: int = 6,
         name: str = None,
         prob: float = 1.0,
+        use_original_phase: bool = False,
+        offset: float = 0.0,
+        duration: float = 1.0,
     ):
         super().__init__(name=name, prob=prob)
 
-        self.n_taps = n_taps
-        self.n_samples = n_samples
-        self.snr = snr
+        self.drr = drr
+        self.eq_amount = eq_amount
+        self.n_bands = n_bands
+        self.use_original_phase = use_original_phase
 
-    def _instantiate(self, state: RandomState, signal: AudioSignal):
+        self.loader = AudioLoader(sources, weights)
+        self.offset = offset
+        self.duration = duration
 
-        reverb_kwargs = {}
+    def _instantiate(self, state: RandomState, signal: AudioSignal = None):
+        eq_amount = sample_from_dist(self.eq_amount, state)
+        eq = -eq_amount * state.rand(self.n_bands)
+        drr = sample_from_dist(self.drr, state)
 
-        # Sample 12 random band gains in [0, 1]
-        for i in range(12):
-            reverb_kwargs[f"band{i}_gain"] = sample_from_dist(("uniform", 0.0, 1.0))
-            
-        # Sample 12 random band decays in [0, 1]
-        for i in range(12):
-            reverb_kwargs[f"band{i}_decay"] = sample_from_dist(("uniform", 0.0, 1.0))
+        ir_signal = self.loader(
+            state,
+            signal.sample_rate,
+            offset=self.offset,
+            duration=self.duration,
+            loudness_cutoff=None,
+            num_channels=signal.num_channels,
+        )["signal"]
+        ir_signal.zero_pad_to(signal.sample_rate)
+
+        return {"eq": eq, "ir_signal": ir_signal, "drr": drr}
+
+    def _transform(self, signal, ir_signal, drr, eq):
+
+        if isinstance(drr, torch.Tensor):
+            drr = drr.to(signal.device)
+        if isinstance(eq, torch.Tensor):
+            eq = eq.to(signal.device)
+        ir_signal = ir_signal.clone().to(signal.device)
         
-        # Sample SNR
-        snr = sample_from_dist(self.snr, state)
-        reverb_kwargs["snr"] = snr
-
-        return reverb_kwargs
-
-    def _transform(
-        self, 
-        signal,
-        snr,
-        band0_gain: torch.Tensor,
-        band1_gain: torch.Tensor,
-        band2_gain: torch.Tensor,
-        band3_gain: torch.Tensor,
-        band4_gain: torch.Tensor,
-        band5_gain: torch.Tensor,
-        band6_gain: torch.Tensor,
-        band7_gain: torch.Tensor,
-        band8_gain: torch.Tensor,
-        band9_gain: torch.Tensor,
-        band10_gain: torch.Tensor,
-        band11_gain: torch.Tensor,
-        band0_decay: torch.Tensor,
-        band1_decay: torch.Tensor,
-        band2_decay: torch.Tensor,
-        band3_decay: torch.Tensor,
-        band4_decay: torch.Tensor,
-        band5_decay: torch.Tensor,
-        band6_decay: torch.Tensor,
-        band7_decay: torch.Tensor,
-        band8_decay: torch.Tensor,
-        band9_decay: torch.Tensor,
-        band10_decay: torch.Tensor,
-        band11_decay: torch.Tensor,
-    ):
-
-        out = signal.clone().resample(44_100)
-
-        # Convert SNR to linear mixing factor
-        snr_lin = torch.pow(10.0, snr / 10)
-        mix = snr_lin / (1 + snr_lin)
-        mix.clamp_(0.0, 1.0)
-
-        orig_n_channels = out.num_channels
-        if orig_n_channels == 1:
-            out.audio_data = out.audio_data.repeat(1, 2, 1)
-        
-        out.audio_data = noise_shaped_reverberation(
-            x=out.audio_data,
-            sample_rate=out.sample_rate,
-            num_samples=self.n_samples,
-            num_bandpass_taps=self.n_taps,
-            mix=mix.unsqueeze(-1).to(out.device),
-            band0_gain=band0_gain.unsqueeze(-1).to(out.device),
-            band1_gain=band1_gain.unsqueeze(-1).to(out.device),
-            band2_gain=band2_gain.unsqueeze(-1).to(out.device),
-            band3_gain=band3_gain.unsqueeze(-1).to(out.device),
-            band4_gain=band4_gain.unsqueeze(-1).to(out.device),
-            band5_gain=band5_gain.unsqueeze(-1).to(out.device),
-            band6_gain=band6_gain.unsqueeze(-1).to(out.device),
-            band7_gain=band7_gain.unsqueeze(-1).to(out.device),
-            band8_gain=band8_gain.unsqueeze(-1).to(out.device),
-            band9_gain=band9_gain.unsqueeze(-1).to(out.device),
-            band10_gain=band10_gain.unsqueeze(-1).to(out.device),
-            band11_gain=band11_gain.unsqueeze(-1).to(out.device),
-            band0_decay=band0_decay.unsqueeze(-1).to(out.device),
-            band1_decay=band1_decay.unsqueeze(-1).to(out.device),
-            band2_decay=band2_decay.unsqueeze(-1).to(out.device),
-            band3_decay=band3_decay.unsqueeze(-1).to(out.device),
-            band4_decay=band4_decay.unsqueeze(-1).to(out.device),
-            band5_decay=band5_decay.unsqueeze(-1).to(out.device),
-            band6_decay=band6_decay.unsqueeze(-1).to(out.device),
-            band7_decay=band7_decay.unsqueeze(-1).to(out.device),
-            band8_decay=band8_decay.unsqueeze(-1).to(out.device),
-            band9_decay=band9_decay.unsqueeze(-1).to(out.device),
-            band10_decay=band10_decay.unsqueeze(-1).to(out.device),
-            band11_decay=band11_decay.unsqueeze(-1).to(out.device),
+        return signal.apply_ir(
+            ir_signal, 
+            drr, 
+            eq, 
+            use_original_phase=self.use_original_phase
         )
-
-        if orig_n_channels == 1:
-            out = out.to_mono()
-
-        out.resample(signal.sample_rate)
-        out = out[..., :signal.signal_length]
-        out.audio_data = torch.nn.functional.pad(
-            out.audio_data,
-            (0, max(0, signal.signal_length - out.signal_length))
-        )
-        
-        return out
 
 
 class Speed(BaseTransform):

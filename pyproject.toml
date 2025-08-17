@@ -11,7 +11,6 @@ dependencies = [
     "matplotlib",
     "rich",
     "descript-audiotools",
-    "dasp-pytorch",
 ]
 
 [tool.setuptools.packages.find]
