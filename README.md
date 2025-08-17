@@ -6,12 +6,10 @@ Links to code are provided below:
 
 | __Notebook__ | __Link__ |
 |--|--|
-| Example 1: Basics | <a href="https://colab.research.google.com/github/oreillyp/wm_tutorial/notebooks/basics.ipynb"><img alt="Open Example 1 in Colab" src="https://colab.research.google.com/assets/colab-badge.svg" /></a> |
-| Example 2: EigenWatermark | <a href="https://colab.research.google.com/github/oreillyp/wm_tutorial/notebooks/eigenwatermark.ipynb"><img alt="Open Example 2 in Colab" src="https://colab.research.google.com/assets/colab-badge.svg" /></a> |
-| Example 3: End-to-End Neural Network Watermark | <a href="https://colab.research.google.com/github/oreillyp/wm_tutorial/notebooks/end_to_end.ipynb"><img alt="Open Example 3 in Colab" src="https://colab.research.google.com/assets/colab-badge.svg" /></a> |
+| Example 1: Basics | <a href="https://colab.research.google.com/github/oreillyp/wm_tutorial/blob/main/notebooks/basics.ipynb"><img alt="Open Example 1 in Colab" src="https://colab.research.google.com/assets/colab-badge.svg" /></a> |
+| Example 2: EigenWatermark | <a href="https://colab.research.google.com/github/oreillyp/wm_tutorial/blob/main/notebooks/eigenwatermark.ipynb"><img alt="Open Example 2 in Colab" src="https://colab.research.google.com/assets/colab-badge.svg" /></a> |
+| Example 3: End-to-End Neural Network Watermark | <a href="https://colab.research.google.com/github/oreillyp/wm_tutorial/blob/main/notebooks/end_to_end.ipynb"><img alt="Open Example 3 in Colab" src="https://colab.research.google.com/assets/colab-badge.svg" /></a> |
 | Example 4: Attacks on Speech Watermarks | <a href="https://huggingface.co/spaces/oreillyp/watermark_stress_test"><img alt="Open Example 4 in HuggingFace" src="https://img.shields.io/badge/Open%20in-HuggingFace-blue?logo=huggingface" /></a> |
-
-
 
 ## Linking Google Colab to Google Drive
 
