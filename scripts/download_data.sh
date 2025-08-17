@@ -17,6 +17,7 @@ if [ "$1" == "" ]; then
 fi
 
 DATA_DIR=$(echo $1 | sed 's:/*$::')
+mkdir -p "$DATA_DIR"
 
 # Exit if symlink or directory already exists
 if [ -e "$LOCAL_DATA_DIR" ]; then
