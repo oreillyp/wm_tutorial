@@ -1,5 +1,150 @@
+import math
 import torch
+import copy
+
+from flatten_dict import flatten
+from flatten_dict import unflatten
+
 from audiotools import AudioSignal, STFTParams
+
+
+def count_parameters(m: torch.nn.Module, trainable: bool = False):
+    if trainable:
+        return sum([p.shape.numel() for p in m.parameters() if p.requires_grad])
+    else:
+        return sum([p.shape.numel() for p in m.parameters()])
+
+
+
+def collate(list_of_dicts: list, n_splits: int = None):
+    """Modify `audiotools.core.util.collate` to return valid signal lengths"""
+
+    batches = []
+    list_len = len(list_of_dicts)
+
+    return_list = False if n_splits is None else True
+    n_splits = 1 if n_splits is None else n_splits
+    n_items = int(math.ceil(list_len / n_splits))
+    
+    for i in range(0, list_len, n_items):
+        # Flatten the dictionaries to avoid recursion.
+        list_of_dicts_ = [flatten(d) for d in list_of_dicts[i : i + n_items]]
+        dict_of_lists = {
+            k: [dic[k] for dic in list_of_dicts_] for k in list_of_dicts_[0]
+        }
+
+        batch = {}
+        for k, v in dict_of_lists.items():
+            if isinstance(v, list):
+                if all(isinstance(s, AudioSignal) for s in v):
+                    batch[k] = AudioSignal.batch(v, pad_signals=True)
+
+                    # Store valid lengths
+                    new_k = [_k for _k in k]
+                    new_k[-1] = new_k[-1] + "_lengths"
+                    new_k = tuple(new_k)
+                    
+                    batch[new_k] = torch.tensor(
+                        [s.signal_length for s in v],
+                        dtype=torch.long,
+                        device=batch[k].device,
+                    )
+                else:
+                    # Borrow the default collate fn from torch.
+                    batch[k] = torch.utils.data._utils.collate.default_collate(v)
+        batches.append(unflatten(batch))
+
+    batches = batches[0] if not return_list else batches
+    return batches
+
+
+def tpr_at_fpr(scores_true, scores_false, target_fpr: float):
+    """
+    Compute achievable True Positive Rate (TPR) at a given False Positive Rate (FPR).
+    """
+    # Convert to tensors
+    s_true  = torch.as_tensor(scores_true, dtype=torch.float32)
+    s_false = torch.as_tensor(scores_false, dtype=torch.float32)
+
+    # Concatenate scores and labels
+    scores = torch.cat([s_true, s_false])
+    labels = torch.cat([
+        torch.ones_like(s_true, dtype=torch.int32),
+        torch.zeros_like(s_false, dtype=torch.int32)
+    ])
+
+    # Sort scores descending
+    sorted_scores, idx = torch.sort(scores, descending=True)
+    sorted_labels = labels[idx]
+
+    # Cumulative counts
+    tp_cum = torch.cumsum(sorted_labels, dim=0)
+    fp_cum = torch.cumsum(1 - sorted_labels, dim=0)
+
+    # Totals
+    tp_total = s_true.numel()
+    fp_total = s_false.numel()
+
+    # Compute TPR and FPR
+    tpr = tp_cum.float() / tp_total
+    fpr = fp_cum.float() / fp_total
+
+    # Mask for achievable FPR
+    mask = fpr <= target_fpr
+    return tpr[mask].max().item() if mask.any() else 0.0
+
+
+def snr(x: AudioSignal, ref: AudioSignal, eps: float = 1e-10):
+    """Signal-to-Noise Ratio: 10 * log10( ||ref||^2 / ||x - ref||^2 )"""
+
+    assert x.sample_rate == ref.sample_rate
+    assert x.shape == ref.shape
+
+    x = x.audio_data.to(torch.float64)
+    ref = ref.audio_data.to(torch.float64)
+    
+    noise = x - ref
+    num = (ref ** 2).sum(dim=-1)               # (n_batch, n_channels)
+    den = (noise ** 2).sum(dim=-1) + eps
+    
+    snr_val = 10.0 * torch.log10(torch.clamp(num, min=eps) / den)
+    snr_val = snr_val.to(torch.float32)
+    return snr_val.mean(dim=-1)
+
+
+def si_sdr(x: torch.Tensor, ref: torch.Tensor, zero_mean: bool = True, eps: float = 1e-10):
+    """
+    Scale-Invariant SDR (Le Roux et al., 2019):
+        Let x̄, s̄ be (optionally) zero-mean versions of estimate and reference.
+        alpha = <x̄, s̄> / ||s̄||^2
+        s_target = alpha * s̄
+        e = x̄ - s_target
+        SI-SDR = 10 * log10( ||s_target||^2 / ||e||^2 )
+    """
+    assert x.sample_rate == ref.sample_rate
+    assert x.shape == ref.shape
+
+    x = x.audio_data.to(torch.float64)
+    ref = ref.audio_data.to(torch.float64)
+
+    if zero_mean:
+        # Subtract mean over time per batch and channel index
+        x = x - x.mean(dim=-1, keepdim=True)
+        ref = ref - ref.mean(dim=-1, keepdim=True)
+
+    # Project input onto reference
+    ref_energy = (ref ** 2).sum(dim=-1, keepdim=True)  # (n_batch, n_channels, 1)
+    
+    # Avoid division by zero if reference is silent
+    alpha = (x * ref).sum(dim=-1, keepdim=True) / (ref_energy + eps)
+    s_target = alpha * ref
+    e = x - s_target
+
+    num = (s_target ** 2).sum(dim=-1)           # (n_batch, n_channels)
+    den = (e ** 2).sum(dim=-1) + eps
+    si_sdr_val = 10.0 * torch.log10(torch.clamp(num, min=eps) / den)
+    si_sdr_val = si_sdr_val.to(torch.float32)
+    return si_sdr_val.mean(dim=-1)
 
 
 def _dct_1d(x: torch.Tensor, norm: str = "ortho"):
@@ -112,11 +257,6 @@ def idct(
     """
     Overlap-add DCT-III (inverse of DCT-II). Returns the same AudioSignal with
     audio_data replaced by the reconstruction.
-
-    Notes:
-      * Uses window-squared normalization for perfect OLA (independent of COLA).
-      * `length` defaults to the same behavior as your iSTFT: original length
-        plus pad bookkeeping, then cropped if match_stride=True.
     """
     # Resolve params
     window_length = (
@@ -183,3 +323,6 @@ def idct(
     audio = y.view(n_batch, n_channels, -1)
     signal.audio_data = audio
     return signal
+
+
+

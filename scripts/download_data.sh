@@ -18,6 +18,12 @@ fi
 
 DATA_DIR=$(echo $1 | sed 's:/*$::')
 
+# Exit if symlink or directory already exists
+if [ -e "$LOCAL_DATA_DIR" ]; then
+  echo "Error: $LOCAL_DATA_DIR already exists."
+  exit 1
+fi
+
 echo Creating symlink from "$LOCAL_DATA_DIR" to "$DATA_DIR"
 ln -s "$DATA_DIR" "$PROJECT_DIR"
 

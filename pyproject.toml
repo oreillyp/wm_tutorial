@@ -6,6 +6,13 @@ build-backend = "setuptools.build_meta"
 name = "wm_tutorial"
 version = "0.1.0"
 requires-python = ">=3.9"
+dependencies = [
+    "torch",
+    "matplotlib",
+    "rich",
+    "descript-audiotools",
+    "dasp-pytorch",
+]
 
 [tool.setuptools.packages.find]
 where = ["."]
